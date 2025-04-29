@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { MessageActions } from "@/components/chat/MessageActions";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { detectLang, summarize, translate } from "@/services/gemininano";
 
 interface Message {
   id: string;
@@ -15,17 +16,79 @@ interface Message {
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [detecting, setDetecting] = useState(false);
 
-  const handleSendMessage = (content: string) => {
-    const newMessage: Message = {
+  const handleSendMessage = async (content: string) => {
+    const userMessage: Message = {
       id: Date.now().toString(),
       content,
       isUser: true,
       timestamp: new Date().toLocaleTimeString(),
     };
 
-    setMessages((prev) => [...prev, newMessage]);
-    // Here we'll later add the AI processing logic
+    setMessages((prev) => [...prev, userMessage]);
+
+    let detectedLang = "en";
+    let detectedLangSymbol = "en";
+
+    await detectLang(content, {
+      setDetecting,
+      setDetectedLangSymbol: (symbol: any) => (detectedLangSymbol = symbol),
+      setDetectedLang: (name: string) => (detectedLang = name),
+    });
+
+    const aiMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      content: `🤖 Gemini AI response to: ${content}`,
+      isUser: false,
+      timestamp: new Date().toLocaleTimeString(),
+      detectedLanguage: detectedLangSymbol,
+    };
+
+    setMessages((prev) => [...prev, aiMessage]);
+  };
+
+  const handleSummarize = async (id: string) => {
+    try {
+      const updatedMessages = await Promise.all(
+        messages.map(async (msg) => {
+          if (msg.id === id) {
+            const summary = await summarize(msg.content);
+            return { ...msg, content: summary };
+          }
+          return msg;
+        })
+      );
+      setMessages(updatedMessages);
+    } catch (error) {
+      console.error("Summarization failed", error);
+    }
+  };
+
+  const handleTranslate = async (id: string, lang: string) => {
+    try {
+      const updatedMessages = await Promise.all(
+        messages.map(async (msg) => {
+          if (msg.id === id && msg.detectedLanguage) {
+            let translated = "";
+            await translate({
+              detectedLangSymbol: msg.detectedLanguage,
+              targetLanguage: lang,
+              content: msg.content,
+              setTranslating: () => {},
+              setDownloading: () => {},
+              setDownloaded: () => {},
+              setTranslation: (val: string) => (translated = val),
+            });
+            return { ...msg, content: translated };
+          }
+          return msg;
+        })
+      );
+      setMessages(updatedMessages);
+    } catch (error) {
+      console.error("Translation failed", error);
+    }
   };
 
   return (
@@ -41,8 +104,8 @@ export default function ChatPage() {
             />
             {!message.isUser && message.detectedLanguage && (
               <MessageActions
-                onSummarize={() => {}}
-                onTranslate={() => {}}
+                onSummarize={() => handleSummarize(message.id)}
+                onTranslate={(lang) => handleTranslate(message.id, lang)}
                 showSummarize={message.content.length > 150}
                 detectedLanguage={message.detectedLanguage}
               />
@@ -52,7 +115,7 @@ export default function ChatPage() {
       </div>
 
       {/* Input Area */}
-      <ChatInput onSend={handleSendMessage} />
+      <ChatInput onSend={handleSendMessage} disabled={detecting} />
     </div>
   );
 }

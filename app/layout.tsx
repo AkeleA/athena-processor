@@ -3,6 +3,7 @@ import { Outfit } from "next/font/google";
 import { AuthProvider } from "@/app/providers";
 import "./globals.css";
 import { Toaster } from "sonner";
+import Head from "next/head";
 
 const outfit = Outfit({
   subsets: ["latin"],
